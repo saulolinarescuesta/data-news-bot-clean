@@ -92,19 +92,24 @@ def create_summary_for_analysts(articles_by_category):
     ).choices[0].message.content.strip()
 
     return (
+        "*━━━━━━━━━━ :newspaper: DAILY DATA & AI DIGEST ━━━━━━━━━━*\n"
         f":star: *Mood of the Day*: {mood_of_the_day}\n\n"
-        f":memo: *Summary for Data Analysts:*\n{summary_bullets}\n\n"
-        f":eyes: *What to Watch Today:*\n{what_to_watch}\n"
+        ":memo: *Summary for Data Analysts:*\n"
+        f"{summary_bullets}\n\n"
+        ":eyes: *What to Watch Today:*\n"
+        f"{what_to_watch}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     )
 
 
 def summarize_articles_with_links(articles_by_category, top_summary):
     """Generate Slack-formatted digest with summary, categories, and clickable links"""
-    message = ":newspaper: *Daily Data & AI Digest*\n\n"
-    message += top_summary + "\n"
+    message = top_summary + "\n"
 
     for category, articles in articles_by_category.items():
-        message += f"*{category}*\n"
+        # Add emoji to each category
+        category_emoji = "🤖" if category == "Data & AI" else "💻" if category == "Tech News" else "🌍"
+        message += f"*{category_emoji} {category}*\n"
         for art in articles:
             short_summary = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -119,7 +124,7 @@ def summarize_articles_with_links(articles_by_category, top_summary):
                 max_tokens=50,
             ).choices[0].message.content.strip()
             message += f"• <{art['link']}|{short_summary}>\n"
-        message += "\n"
+        message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     return message
 
 
@@ -142,3 +147,4 @@ if __name__ == "__main__":
     print("Posting to Slack...")
     post_to_slack(digest_message)
     print("✅ Digest posted!")
+
