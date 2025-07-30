@@ -8,7 +8,7 @@ SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-# News sources by category (we will only take 3 per category)
+# News sources by category (3 per category)
 NEWS_FEEDS = {
     "Data & AI": [
         "https://www.dataversity.net/feed/",
@@ -27,14 +27,15 @@ NEWS_FEEDS = {
         "https://www.ft.com/world/us?format=rss"
     ]
 }
-LIMIT_PER_CATEGORY = 3  # Only 3 news per categoryD
+LIMIT_PER_CATEGORY = 3
+
 # ========== CLIENTS ==========
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ========== FUNCTIONS ==========
 def fetch_articles(feeds_by_category, limit_per_category=3):
-    """Fetch RSS articles and limit to 3 total per category"""
+    """Fetch RSS articles and limit to 3 per category"""
     all_articles = {}
     for category, feeds in feeds_by_category.items():
         articles = []
@@ -51,46 +52,72 @@ def fetch_articles(feeds_by_category, limit_per_category=3):
 
 
 def create_summary_for_analysts(articles_by_category):
-    """Create a top summary for data analysts"""
+    """Create Mood of the Day, Summary, and What to Watch sections"""
     all_titles = []
     for articles in articles_by_category.values():
         all_titles.extend([a["title"] for a in articles])
 
-    prompt = (
-        "Given the following news headlines, write a concise summary (3-4 bullet points) "
-        "about what data analysts should focus on today to improve their work:\n\n" 
+    # Mood of the Day
+    mood_prompt = (
+        "Given the following news headlines, provide a one-line sentiment or priority indicator "
+        "for data analysts. Keep it short (max 15 words) and add an emoji at the beginning:\n\n"
         + "\n".join(all_titles)
     )
-
-    completion = openai_client.chat.completions.create(
+    mood_of_the_day = openai_client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=150,
+        messages=[{"role": "user", "content": mood_prompt}],
+        max_tokens=50,
+    ).choices[0].message.content.strip()
+
+    # Summary for Data Analysts
+    summary_prompt = (
+        "Summarize the following headlines into 3-4 bullet points for data analysts. "
+        "Focus on trends and why they matter:\n\n" + "\n".join(all_titles)
     )
-    return completion.choices[0].message.content.strip()
+    summary_bullets = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": summary_prompt}],
+        max_tokens=150,
+    ).choices[0].message.content.strip()
+
+    # What to Watch Today
+    watch_prompt = (
+        "From these headlines, list 2-3 key things data analysts should watch for today. "
+        "Keep it brief and action-oriented:\n\n" + "\n".join(all_titles)
+    )
+    what_to_watch = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": watch_prompt}],
+        max_tokens=80,
+    ).choices[0].message.content.strip()
+
+    return (
+        f":star: *Mood of the Day*: {mood_of_the_day}\n\n"
+        f":memo: *Summary for Data Analysts:*\n{summary_bullets}\n\n"
+        f":eyes: *What to Watch Today:*\n{what_to_watch}\n"
+    )
 
 
 def summarize_articles_with_links(articles_by_category, top_summary):
     """Generate Slack-formatted digest with summary, categories, and clickable links"""
     message = ":newspaper: *Daily Data & AI Digest*\n\n"
-    message += f"*Summary for Data Analysts*\n{top_summary}\n\n"
+    message += top_summary + "\n"
 
     for category, articles in articles_by_category.items():
         message += f"*{category}*\n"
         for art in articles:
-            completion = openai_client.chat.completions.create(
+            short_summary = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
-                        "role": "user", 
+                        "role": "user",
                         "content": (
                             f"Summarize this news headline in 1 line for data analysts:\n{art['title']}"
                         )
                     }
                 ],
                 max_tokens=50,
-            )
-            short_summary = completion.choices[0].message.content.strip()
+            ).choices[0].message.content.strip()
             message += f"• <{art['link']}|{short_summary}>\n"
         message += "\n"
     return message
