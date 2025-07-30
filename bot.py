@@ -26,7 +26,7 @@ NEWS_FEEDS = {
         "https://www.ft.com/world/us?format=rss"
     ]
 }
-LIMIT_PER_CATEGORY = 3  # Only 3 news per category
+LIMIT_PER_CATEGORY = 3
 
 # ========== CLIENTS ==========
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
@@ -54,8 +54,8 @@ def create_summary_blocks(articles_by_category):
 
     # Mood of the Day
     mood_prompt = (
-        "Given these headlines, write 1 line for 'Mood of the Day' with a priority (High/Medium/Low):\n\n"
-        + "\n".join(all_titles)
+        "Given these news headlines (business, economy, data & AI only), write 1 line for 'Mood of the Day' "
+        "and assign a priority (High/Medium/Low). Headlines:\n\n" + "\n".join(all_titles)
     )
     mood_text = openai_client.chat.completions.create(
         model="gpt-4o-mini",
@@ -65,7 +65,7 @@ def create_summary_blocks(articles_by_category):
 
     # Summary for Analysts
     summary_prompt = (
-        "Write 3 short bullet points summarizing what data analysts should focus on today:\n\n"
+        "Write 3 short bullet points summarizing what data/business analysts should focus on today (business context only):\n\n"
         + "\n".join(all_titles)
     )
     summary_text = openai_client.chat.completions.create(
@@ -74,22 +74,24 @@ def create_summary_blocks(articles_by_category):
         max_tokens=120,
     ).choices[0].message.content.strip()
 
-    # What to Watch - Force exactly 3 numbered lines
+    # What to Watch - STRONG guardrails
     watch_prompt = (
-        "Write exactly 3 concise bullet points for 'What to Watch Today', each starting with 1., 2., 3."
+        "Write exactly 3 points for 'What to Watch Today' for data/business analysts. "
+        "Each point must be relevant to markets, economy, data & AI, or corporate trends. "
+        "Number them 1., 2., 3. Do not include movies, TV shows, or unrelated topics."
     )
-    watch_raw = openai_client.chat.completions.create(
+    watch_text = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": watch_prompt}],
         max_tokens=100,
     ).choices[0].message.content.strip()
 
     # Clean formatting for Slack
-    watch_text = watch_raw.replace("**", "*").strip()
+    watch_text = watch_text.replace("**", "*").strip()
     summary_text = summary_text.replace("**", "*").strip()
     mood_text = mood_text.replace("**", "*").strip()
 
-    # Build Slack blocks (visually distinct)
+    # Slack blocks
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "📰 DAILY DATA & AI DIGEST"}},
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*🌟 Mood of the Day:*\n{mood_text}"}},
@@ -107,24 +109,24 @@ def summarize_articles_with_links(articles_by_category):
     for category, articles in articles_by_category.items():
         message += f"*{category}*\n"
         for art in articles:
-            completion = openai_client.chat.completions.create(
+            summary = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "user", 
-                        "content": f"Summarize this news headline in 1 line:\n{art['title']}"
+                        "content": f"Summarize this headline in 1 line for data/business analysts:\n{art['title']}"
                     }
                 ],
                 max_tokens=50,
             )
-            short_summary = completion.choices[0].message.content.strip()
+            short_summary = summary.choices[0].message.content.strip()
             message += f"• <{art['link']}|{short_summary}>\n"
         message += "\n"
     return message
 
 
 def post_to_slack(blocks, message):
-    """Post message to Slack channel using blocks for the top and text for the news list"""
+    """Post to Slack: blocks for top summary + text for news links"""
     slack_client.chat_postMessage(channel=CHANNEL_ID, blocks=blocks, text=message)
 
 
@@ -133,14 +135,15 @@ if __name__ == "__main__":
     print("Fetching news...")
     articles_by_category = fetch_articles(NEWS_FEEDS, LIMIT_PER_CATEGORY)
 
-    print("Creating top summary blocks...")
+    print("Creating summary...")
     top_blocks = create_summary_blocks(articles_by_category)
 
-    print("Building digest...")
+    print("Building article list...")
     digest_message = summarize_articles_with_links(articles_by_category)
 
     print("Posting to Slack...")
     post_to_slack(top_blocks, digest_message)
     print("✅ Digest posted!")
+
 
 
