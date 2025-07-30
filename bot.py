@@ -90,8 +90,13 @@ def create_summary_blocks(articles_by_category):
 def summarize_articles_with_links(articles_by_category):
     """Return formatted text with clickable news links (3 per category)"""
     message = ""
+    emojis = {
+        "Data & AI": "🤖",
+        "Tech News": "💻",
+        "Political & Economic": "🌍"
+    }
     for category, articles in articles_by_category.items():
-        message += f"*{category}*\n"
+        message += f"*{emojis.get(category, '')} {category}*\n"
         for art in articles:
             summary = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -110,8 +115,12 @@ def summarize_articles_with_links(articles_by_category):
 
 
 def post_to_slack(blocks, message):
-    """Post top blocks and news links to Slack"""
-    slack_client.chat_postMessage(channel=CHANNEL_ID, blocks=blocks, text=message)
+    """Post top blocks and then news links in separate messages"""
+    # Post summary blocks
+    slack_client.chat_postMessage(channel=CHANNEL_ID, blocks=blocks)
+
+    # Post news links in a separate clean message
+    slack_client.chat_postMessage(channel=CHANNEL_ID, text=message)
 
 
 # ========== MAIN ==========
