@@ -8,7 +8,6 @@ SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 
-# News sources by category (3 per category)
 NEWS_FEEDS = {
     "Data & AI": [
         "https://www.dataversity.net/feed/",
@@ -35,7 +34,6 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ========== FUNCTIONS ==========
 def fetch_articles(feeds_by_category, limit_per_category=3):
-    """Fetch RSS articles and limit to 3 per category"""
     all_articles = {}
     for category, feeds in feeds_by_category.items():
         articles = []
@@ -50,101 +48,84 @@ def fetch_articles(feeds_by_category, limit_per_category=3):
         all_articles[category] = articles
     return all_articles
 
-
-def create_summary_for_analysts(articles_by_category):
-    """Create Mood of the Day, Summary, and What to Watch sections"""
-    all_titles = []
-    for articles in articles_by_category.values():
-        all_titles.extend([a["title"] for a in articles])
-
+def create_summary_blocks(articles_by_category):
     # Mood of the Day
+    all_titles = [a["title"] for articles in articles_by_category.values() for a in articles]
     mood_prompt = (
-        "Given the following news headlines, provide a one-line sentiment or priority indicator "
-        "for data analysts. Keep it short (max 15 words) and add an emoji at the beginning:\n\n"
-        + "\n".join(all_titles)
+        "Given these news headlines, describe the overall 'Mood of the Day' in one concise line "
+        "and give it a priority (High/Medium/Low):\n\n" + "\n".join(all_titles)
     )
-    mood_of_the_day = openai_client.chat.completions.create(
+    mood_result = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": mood_prompt}],
         max_tokens=50,
-    ).choices[0].message.content.strip()
+    )
+    mood_text = mood_result.choices[0].message.content.strip()
 
     # Summary for Data Analysts
     summary_prompt = (
-        "Summarize the following headlines into 3-4 bullet points for data analysts. "
-        "Focus on trends and why they matter:\n\n" + "\n".join(all_titles)
+        "Given the following news headlines, write 3 bullet points summarizing what data analysts should focus on today:\n\n"
+        + "\n".join(all_titles)
     )
-    summary_bullets = openai_client.chat.completions.create(
+    summary_result = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": summary_prompt}],
-        max_tokens=150,
-    ).choices[0].message.content.strip()
+        max_tokens=120,
+    )
+    summary_text = summary_result.choices[0].message.content.strip()
 
     # What to Watch Today
     watch_prompt = (
-        "From these headlines, list 2-3 key things data analysts should watch for today. "
-        "Keep it brief and action-oriented:\n\n" + "\n".join(all_titles)
+        "From the headlines, suggest 3 'What to Watch Today' points with clear focus areas for analysts."
     )
-    what_to_watch = openai_client.chat.completions.create(
+    watch_result = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": watch_prompt}],
-        max_tokens=80,
-    ).choices[0].message.content.strip()
-
-    return (
-        "*━━━━━━━━━━ :newspaper: DAILY DATA & AI DIGEST ━━━━━━━━━━*\n"
-        f":star: *Mood of the Day*: {mood_of_the_day}\n\n"
-        ":memo: *Summary for Data Analysts:*\n"
-        f"{summary_bullets}\n\n"
-        ":eyes: *What to Watch Today:*\n"
-        f"{what_to_watch}\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        max_tokens=100,
     )
+    watch_text = watch_result.choices[0].message.content.strip()
 
+    # Build Slack blocks
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "📰 DAILY DATA & AI DIGEST"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*🌟 Mood of the Day:* {mood_text}"}},
+        {"type": "divider"},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*📊 Summary for Data Analysts:*\n{summary_text}"}},
+        {"type": "divider"},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*👀 What to Watch Today:*\n{watch_text}"}},
+        {"type": "divider"},
+    ]
 
-def summarize_articles_with_links(articles_by_category, top_summary):
-    """Generate Slack-formatted digest with summary, categories, and clickable links"""
-    message = top_summary + "\n"
+    return blocks
 
+def create_category_blocks(articles_by_category):
+    blocks = []
     for category, articles in articles_by_category.items():
-        # Add emoji to each category
-        category_emoji = "🤖" if category == "Data & AI" else "💻" if category == "Tech News" else "🌍"
-        message += f"*{category_emoji} {category}*\n"
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"*{category}*"}})
         for art in articles:
-            short_summary = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Summarize this news headline in 1 line for data analysts:\n{art['title']}"
-                        )
-                    }
-                ],
-                max_tokens=50,
-            ).choices[0].message.content.strip()
-            message += f"• <{art['link']}|{short_summary}>\n"
-        message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    return message
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"• <{art['link']}|{art['title']}>"}
+            })
+        blocks.append({"type": "divider"})
+    return blocks
 
-
-def post_to_slack(message):
-    """Post message to Slack channel"""
-    slack_client.chat_postMessage(channel=CHANNEL_ID, text=message)
-
+def post_to_slack(blocks):
+    slack_client.chat_postMessage(channel=CHANNEL_ID, blocks=blocks)
 
 # ========== MAIN ==========
 if __name__ == "__main__":
     print("Fetching news...")
     articles_by_category = fetch_articles(NEWS_FEEDS, LIMIT_PER_CATEGORY)
 
-    print("Creating top summary for data analysts...")
-    top_summary = create_summary_for_analysts(articles_by_category)
+    print("Building summary blocks...")
+    top_blocks = create_summary_blocks(articles_by_category)
 
-    print("Building digest...")
-    digest_message = summarize_articles_with_links(articles_by_category, top_summary)
+    print("Building category blocks...")
+    category_blocks = create_category_blocks(articles_by_category)
 
     print("Posting to Slack...")
-    post_to_slack(digest_message)
-    print("✅ Digest posted!")
+    post_to_slack(top_blocks + category_blocks)
+    print("✅ Digest posted with Block Kit!")
+
 
