@@ -51,7 +51,7 @@ def fetch_articles(feeds_by_category, limit_per_category=3):
 
 
 def create_summary_blocks(articles_by_category):
-    """Generate only Mood of the Day and Summary"""
+    """Generate Slack blocks: Mood of the Day, Summary, and Cuesta Relevance"""
     all_titles = [a["title"] for articles in articles_by_category.values() for a in articles]
 
     # Mood of the Day
@@ -62,7 +62,7 @@ def create_summary_blocks(articles_by_category):
     mood_text = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": mood_prompt}],
-        max_tokens=50,
+        max_tokens=60,
     ).choices[0].message.content.strip()
 
     # Summary for Analysts
@@ -76,12 +76,26 @@ def create_summary_blocks(articles_by_category):
         max_tokens=120,
     ).choices[0].message.content.strip()
 
-    # Format
+    # Cuesta Relevance
+    cuesta_prompt = (
+        "Based on these news headlines, how might this news be relevant to a consulting firm like "
+        "Cuesta Partners that focuses on data/AI, private equity diligence, and digital transformation? "
+        "Write 2-3 sentences.\n\n" + "\n".join(all_titles)
+    )
+    cuesta_relevance = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": cuesta_prompt}],
+        max_tokens=100,
+    ).choices[0].message.content.strip()
+
+    # Format as Slack blocks
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": "📰 DAILY DATA & AI DIGEST"}},
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*🌟 Mood of the Day:*\n{mood_text}"}},
         {"type": "divider"},
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*📊 Summary for Data Analysts:*\n{summary_text}"}},
+        {"type": "divider"},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*🏢 Cuesta Relevance:*\n{cuesta_relevance}"}},
         {"type": "divider"}
     ]
     return blocks
@@ -137,5 +151,4 @@ if __name__ == "__main__":
     print("Posting to Slack...")
     post_to_slack(top_blocks, digest_message)
     print("✅ Digest posted!")
-
 
