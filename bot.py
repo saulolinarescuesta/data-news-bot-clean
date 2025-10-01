@@ -93,7 +93,7 @@ def create_summary_blocks(articles_by_category):
         {"type": "header", "text": {"type": "plain_text", "text": "📰 DAILY DATA & AI DIGEST"}},
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*🌟 Mood of the Day:*\n{mood_text}"}},
         {"type": "divider"},
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"*📊 Summary for Data Analysts:*\n{summary_text}"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*📊 Summary for Cuestans:*\n{summary_text}"}},
         {"type": "divider"},
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*🏢 Cuesta Relevance:*\n{cuesta_relevance}"}},
         {"type": "divider"}
